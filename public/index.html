@@ -307,7 +307,7 @@ window.__ensureLogin=(function(){var p=null;return function(){
 <div id="failM" class="modal"><div class="m-card">
   <div class="m-eyebrow">Out of space</div><div class="m-title">Board Full!</div>
   <div class="m-progress" id="failProg">0/0</div>
-  <button id="reviveBtn" class="m-btn">Revive &middot; 1 &#960;</button>
+  <button id="reviveBtn" class="m-btn">Revive &middot; 5 &#960;</button>
   <button id="giveupBtn" class="m-btn gray">Restart level</button>
 </div></div>
 <div id="setM" class="modal"><div class="m-card">
@@ -436,7 +436,7 @@ window.__ensureLogin=(function(){var p=null;return function(){
 <div id="adLoad"><div class="ad-box"><div class="ad-spin"></div><div class="ad-txt">Pagando com Pi&#8230;</div></div></div>
 <div id="win"><div class="m-card"><div class="m-eyebrow">Level complete</div><div class="m-title">Congratulations!</div><div class="w-counter"><span class="m-gem"></span><span id="winAmt">40</span></div>
 <div id="multWrap"><div id="multPin">&#9660;</div><div id="multBar"><span class="mseg s2">X2</span><span class="mseg s3">X3</span><span class="mseg s4">X4</span><span class="mseg s5">X5</span><span class="mseg s4">X4</span><span class="mseg s3">X3</span><span class="mseg s2">X2</span></div></div>
-<button id="claimBtn" class="m-btn">&#11088; X2 &middot; 1 &#960;</button><button id="winNext" class="m-btn gray">Next level</button></div></div>
+<button id="claimBtn" class="m-btn">&#11088; X2 &middot; 5 &#960;</button><button id="winNext" class="m-btn gray">Next level</button></div></div>
 </div>
 <script>
 "use strict";
@@ -1330,8 +1330,8 @@ function updateCoins(){coinAmt.textContent=S.coins;try{hCoinAmt.textContent=S.co
    NAO completa dentro do Pi Browser (isso e regra da Pi, nao do jogo). */
 
 /* ===== PRECOS EM PI (U2A) ===== */
-var SHOP_PI={100:1,250:2,500:3,1000:5};      // pacote de diamantes -> preco em Pi
-var REVIVE_PI=1, UNLOCK_PI=1, WIN_CLAIM_PI=1; // acoes avulsas
+var SHOP_PI={100:10,250:25,500:60,1000:100};  // pacote de diamantes -> preco em Pi
+var REVIVE_PI=5, UNLOCK_PI=5, WIN_CLAIM_PI=5; // acoes avulsas (5x)
 
 var _payBusy=false;
 function _payOverlay(on){try{var o=document.getElementById('adLoad');if(o)o.style.display=on?'flex':'none';}catch(e){}}
