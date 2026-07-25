@@ -24,19 +24,35 @@ window.__gameReady=(function(){
   }catch(e){return Promise.resolve(false);}
 })();
 
-/* LOGIN/AUTH — chame __ensureLogin() quando precisar do usuario (nick, pagamento).
+/* LOGIN/AUTH — chame __ensureLogin() quando precisar do usuario (nick, PAGAMENTO).
+   Agora pede tambem o scope 'payments' (o jogo cobra em Pi na loja/revive/unlock).
    Retorna Promise<authResult|null>; cacheado (1x por sessao). authResult tem
    .user.username, .user.uid e .accessToken (valide o accessToken no SEU backend). */
+var PI_API='';   // mesma origem: /api/pi-approve, /api/pi-complete, /api/pi-cancel (Cloudflare Pages Functions)
+function __piPost(path,body){
+  try{return fetch(PI_API+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})})
+    .then(function(r){return r.json().catch(function(){return {};});});}
+  catch(e){return Promise.reject(e);}
+}
+/* onIncompletePaymentFound: um pagamento anterior ficou pendente. Se ja tem txid,
+   manda o backend COMPLETAR; senao, CANCELA. Fail-open (nunca trava o jogo). */
+window.__piHandleIncomplete=function(payment){
+  try{
+    var id=payment&&payment.identifier;
+    var txid=payment&&payment.transaction&&payment.transaction.txid;
+    console.warn('[pi] pagamento incompleto:',id,'txid='+(txid||'-'));
+    if(!id)return;
+    if(txid){__piPost('/api/pi-complete',{paymentId:id,txid:txid}).then(function(){console.warn('[pi] incompleto -> completado');}).catch(function(){});}
+    else{__piPost('/api/pi-cancel',{paymentId:id}).then(function(){console.warn('[pi] incompleto -> cancelado');}).catch(function(){});}
+  }catch(e){}
+};
 window.__ensureLogin=(function(){var p=null;return function(){
   if(p)return p;
   p=(function(){
     try{
       if(!window.Pi||!Pi.authenticate)return Promise.resolve(null);
-      var scopes=['username'];            // TODO PI: adicione 'payments' quando for cobrar em Pi
-      return Pi.authenticate(scopes,function(payment){
-        /* TODO PI: onIncompletePaymentFound — reenvie ao backend pra completar/cancelar */
-        console.warn('[pi] pagamento incompleto:',payment);
-      }).then(function(auth){
+      var scopes=['username','payments'];   // 'payments' habilita Pi.createPayment
+      return Pi.authenticate(scopes,window.__piHandleIncomplete).then(function(auth){
         window.__piAuth=auth;
         console.log('[pi] auth OK:',auth&&auth.user&&auth.user.username);
         return auth;
@@ -291,7 +307,7 @@ window.__ensureLogin=(function(){var p=null;return function(){
 <div id="failM" class="modal"><div class="m-card">
   <div class="m-eyebrow">Out of space</div><div class="m-title">Board Full!</div>
   <div class="m-progress" id="failProg">0/0</div>
-  <button id="reviveBtn" class="m-btn">&#127916; Revive (free)</button>
+  <button id="reviveBtn" class="m-btn">Revive &middot; 1 &#960;</button>
   <button id="giveupBtn" class="m-btn gray">Restart level</button>
 </div></div>
 <div id="setM" class="modal"><div class="m-card">
@@ -417,10 +433,10 @@ window.__ensureLogin=(function(){var p=null;return function(){
     <button class="m-cont" id="rtYes" style="background:linear-gradient(180deg,#ff8a5c,#f05a28);box-shadow:0 4px 0 rgba(0,0,0,.2)">Restart</button>
   </div>
 </div></div>
-<div id="adLoad"><div class="ad-box"><div class="ad-spin"></div><div class="ad-txt">Loading ad...</div></div></div>
+<div id="adLoad"><div class="ad-box"><div class="ad-spin"></div><div class="ad-txt">Pagando com Pi&#8230;</div></div></div>
 <div id="win"><div class="m-card"><div class="m-eyebrow">Level complete</div><div class="m-title">Congratulations!</div><div class="w-counter"><span class="m-gem"></span><span id="winAmt">40</span></div>
 <div id="multWrap"><div id="multPin">&#9660;</div><div id="multBar"><span class="mseg s2">X2</span><span class="mseg s3">X3</span><span class="mseg s4">X4</span><span class="mseg s5">X5</span><span class="mseg s4">X4</span><span class="mseg s3">X3</span><span class="mseg s2">X2</span></div></div>
-<button id="claimBtn" class="m-btn">&#127916; &#11088; X2</button><button id="winNext" class="m-btn gray">Next level</button></div></div>
+<button id="claimBtn" class="m-btn">&#11088; X2 &middot; 1 &#960;</button><button id="winNext" class="m-btn gray">Next level</button></div></div>
 </div>
 <script>
 "use strict";
@@ -801,21 +817,19 @@ function drawAdLock(c){
   ctx.fillStyle=rg;ctx.fillRect(c.x-rr,c.y-rr,rr*2,rr*2);
   ctx.restore();
   hexPath(c.x,c.y,rr);ctx.lineWidth=CELL_BORDER;ctx.strokeStyle='#ffd1ec';ctx.stroke();
-  // claquete central (sem texto)
-  var s=HEXR*0.56, bx=c.x, by=c.y;
+  // moeda Pi central (paga em Pi pra desbloquear)
+  var s=HEXR*0.60, bx=c.x, by=c.y;
   ctx.save();ctx.translate(bx,by);
   ctx.shadowColor='rgba(60,0,60,.40)';ctx.shadowBlur=6;ctx.shadowOffsetY=2;
-  ctx.fillStyle='#fff';roundRect(-s*0.75,-s*0.16,s*1.5,s*0.88,5);ctx.fill();
+  ctx.beginPath();ctx.arc(0,0,s*0.62,0,Math.PI*2);ctx.fillStyle='#fff';ctx.fill();
   ctx.shadowColor='transparent';
-  // braco superior escuro com listras diagonais
-  ctx.fillStyle='#232946';roundRect(-s*0.75,-s*0.52,s*1.5,s*0.36,4);ctx.fill();
-  ctx.save();roundRect(-s*0.75,-s*0.52,s*1.5,s*0.36,4);ctx.clip();
-  ctx.fillStyle='#fff';
-  for(var st=0;st<4;st++){ctx.save();ctx.translate(-s*0.60+st*s*0.42,-s*0.34);ctx.rotate(-0.5);ctx.fillRect(-s*0.07,-s*0.30,s*0.14,s*0.60);ctx.restore();}
-  ctx.restore();
-  // play em degrade rosa->roxo
-  var pg=ctx.createLinearGradient(0,0,0,s*0.6);pg.addColorStop(0,'#ff5ec7');pg.addColorStop(1,'#a34df0');
-  ctx.fillStyle=pg;ctx.beginPath();ctx.moveTo(-s*0.16,s*0.04);ctx.lineTo(-s*0.16,s*0.58);ctx.lineTo(s*0.36,s*0.31);ctx.closePath();ctx.fill();
+  // anel em degrade rosa->roxo
+  var rgp=ctx.createLinearGradient(0,-s*0.5,0,s*0.5);rgp.addColorStop(0,'#ff5ec7');rgp.addColorStop(1,'#a34df0');
+  ctx.lineWidth=Math.max(2,s*0.07);ctx.strokeStyle=rgp;ctx.beginPath();ctx.arc(0,0,s*0.62,0,Math.PI*2);ctx.stroke();
+  // simbolo π em degrade
+  var pg=ctx.createLinearGradient(0,-s*0.4,0,s*0.4);pg.addColorStop(0,'#ff5ec7');pg.addColorStop(1,'#a34df0');
+  ctx.fillStyle=pg;ctx.textAlign='center';ctx.textBaseline='middle';ctx.font='900 '+Math.round(s*0.92)+'px system-ui,Arial';
+  ctx.fillText('\u03C0',0,s*0.04);
   ctx.restore();
 }
 function roundRect(x,y,w,hh,r){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+hh,r);ctx.arcTo(x+w,y+hh,x,y+hh,r);ctx.arcTo(x,y+hh,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();}
@@ -1266,7 +1280,7 @@ function winSweepStart(){
     var m=multAt(winPos);
     document.getElementById('multPin').style.left=(winPos*100)+'%';
     winAmt.textContent=WIN_BASE*m;                       // resultado ao vivo: 80/120/160/200
-    claimBtn.innerHTML='&#127916; &#11088; X'+m;
+    claimBtn.innerHTML='&#11088; X'+m+' &middot; '+WIN_CLAIM_PI+' \u03C0';
   },16);
 }
 function confetti(){
@@ -1294,64 +1308,72 @@ claimBtn.onclick=function(){
   if(winTick){clearInterval(winTick);winTick=null;} // TRAVA o ponteiro no multiplicador atual
   claimBtn.disabled=true;
   var mult=multAt(winPos), prize=WIN_BASE*mult;
-  showRewardedAd(function(){ S.coins+=prize;save();updateCoins();playSnd('right');winGo(); },
-                 function(){ claimBtn.disabled=false; winSweepStart(); });
+  payWithPi(WIN_CLAIM_PI,'Hexanova \u2014 bonus X'+mult+' ('+prize+' diamonds)',{type:'win_bonus',level:S.level,mult:mult,prize:prize})
+    .then(function(){ S.coins+=prize;save();updateCoins();playSnd('right');winGo(); })
+    .catch(function(){ claimBtn.disabled=false; winSweepStart(); });
 };
 winNext.onclick=function(){ winGo(); }; // proximo nivel: segue sem premio
 function updateCoins(){coinAmt.textContent=S.coins;try{hCoinAmt.textContent=S.coins;}catch(e){}}
 /* ============================================================================
-   PONTO DE INTEGRACAO PI #2 — REWARDED AD (Pi.Ads)
-   So recompensa quando result==='AD_REWARDED'. Qualquer outra coisa = falha.
-   Guard anti-duplo-clique. Fora do Pi Browser (dev): fallback simulado.
-   IMPORTANTE: pra recompensa VERIFICADA, o fluxo Pi completo e:
-     Pi.Ads.isAdReady('rewarded') -> se nao, Pi.Ads.requestAd('rewarded')
-     -> Pi.Ads.showAd('rewarded') -> pegar r.adId e VALIDAR no seu backend
-        via GET /v2/ads_network/status/:adId (com sua server API key).
-   O stub abaixo cobre o show; a validacao server-side fica como TODO PI. */
-var _adBusy=false;
-function showRewardedAd(onReward,onFail){
-  if(_adBusy){ if(onFail)onFail(); return; }
-  _adBusy=true;
-  try{document.getElementById('adLoad').style.display='flex';}catch(e){}
-  function done(ok){ _adBusy=false;
-    try{document.getElementById('adLoad').style.display='none';}catch(e){}
-    try{ ok?(onReward&&onReward()):(onFail&&onFail()); }catch(e){} }
-  try{
-    if(window.Pi&&Pi.Ads&&Pi.Ads.showAd){
-      window.__adMode='real';
-      function _show(){
-        return Pi.Ads.showAd("rewarded").then(function(r){
-          window.__adLast={phase:'resolved',result:r};
-          var okk=!!(r&&r.result==='AD_REWARDED');
-          console.warn('[pi] rewarded ad:',JSON.stringify(r));
-          // TODO PI: se okk, valide r.adId no backend ANTES de creditar em producao
-          done(okk);
-        });
-      }
-      // garante que ha ad carregado antes de exibir
-      Promise.resolve(Pi.Ads.isAdReady?Pi.Ads.isAdReady("rewarded"):{ready:true}).then(function(s){
-        if(s&&s.ready===false&&Pi.Ads.requestAd){return Pi.Ads.requestAd("rewarded").then(_show);}
-        return _show();
-      }).catch(function(e){
-        window.__adLast={phase:'rejected',error:e};
-        console.warn('[pi] rewarded ad REJEITOU:',e);
-        done(false);
-      });
-    }else{
-      // FAIL-CLOSED: fallback SO em contexto claramente dev (file/content/localhost E fora do Pi).
-      var isDev=/^(file|content):/.test(location.protocol)||/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
-      var inPi=/PiBrowser/i.test(navigator.userAgent||'');
-      if(isDev&&!inPi){
-        window.__adMode='fallback';
-        console.warn('[pi] rewarded ad: FALLBACK DEV (sucesso SIMULADO)');
-        setTimeout(function(){done(true);},600);
-      }else{
-        window.__adMode='real';
-        console.warn('[pi] rewarded ad: SDK ausente -> FALHA (fail-closed)');
-        done(false);
-      }
+   PONTO DE INTEGRACAO PI #2 — PAGAMENTO U2A (Pi.createPayment)
+   Substitui os antigos rewarded ads. Fluxo oficial User-to-App:
+     1) Pi.createPayment({amount,memo,metadata}, callbacks)
+     2) onReadyForServerApproval(paymentId) -> POST /api/pi-approve
+        (o backend chama api.minepi.com/v2/payments/:id/approve com a Server API Key)
+     3) usuario assina na carteira Pi
+     4) onReadyForServerCompletion(paymentId,txid) -> POST /api/pi-complete
+        (o backend chama .../complete com o txid) -> SO ENTAO credita a recompensa
+     5) onCancel / onError -> falha, nao credita
+   Fora do Pi Browser (dev local) o pagamento e SIMULADO pra testar a UI.
+   Requer no backend (Cloudflare Pages Functions): functions/api/pi-approve.js +
+   pi-complete.js + pi-cancel.js e a env PI_SERVER_API_KEY. Sem backend, o pagamento
+   NAO completa dentro do Pi Browser (isso e regra da Pi, nao do jogo). */
+
+/* ===== PRECOS EM PI (U2A) ===== */
+var SHOP_PI={100:1,250:2,500:3,1000:5};      // pacote de diamantes -> preco em Pi
+var REVIVE_PI=1, UNLOCK_PI=1, WIN_CLAIM_PI=1; // acoes avulsas
+
+var _payBusy=false;
+function _payOverlay(on){try{var o=document.getElementById('adLoad');if(o)o.style.display=on?'flex':'none';}catch(e){}}
+/* payWithPi -> Promise que RESOLVE so quando o pagamento e completado (ou simulado no dev). */
+function payWithPi(amount,memo,meta){
+  return new Promise(function(resolve,reject){
+    if(_payBusy){reject(new Error('busy'));return;}
+    _payBusy=true;_payOverlay(true);
+    function settle(ok,info){_payBusy=false;_payOverlay(false);
+      window.__payLast={ok:ok,info:info,mode:window.__payMode};
+      if(ok)resolve(info||{});else reject(info||new Error('fail'));}
+
+    var isDev=/^(file|content):/.test(location.protocol)||/^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+    var inPi=/PiBrowser/i.test(navigator.userAgent||'');
+
+    // Sem SDK: dev -> simula sucesso; producao -> falha (fail-closed)
+    if(!(window.Pi&&Pi.createPayment)){
+      if(isDev&&!inPi){window.__payMode='fallback';console.warn('[pi] pay: FALLBACK DEV (sucesso SIMULADO) '+amount+'\u03C0 "'+memo+'"');setTimeout(function(){settle(true,{simulated:true,amount:amount});},700);}
+      else{window.__payMode='real';console.warn('[pi] pay: SDK ausente -> FALHA (fail-closed)');settle(false,new Error('Pi SDK ausente'));}
+      return;
     }
-  }catch(e){ done(false); }
+    window.__payMode='real';
+    __ensureLogin().then(function(auth){
+      if(!auth){console.warn('[pi] pay: sem auth');settle(false,new Error('sem login Pi'));return;}
+      try{
+        Pi.createPayment({amount:amount,memo:memo,metadata:meta||{}},{
+          onReadyForServerApproval:function(paymentId){
+            console.warn('[pi] pay approval:',paymentId);
+            __piPost('/api/pi-approve',{paymentId:paymentId}).catch(function(e){console.warn('[pi] approve falhou',e);});
+          },
+          onReadyForServerCompletion:function(paymentId,txid){
+            console.warn('[pi] pay completion:',paymentId,'txid='+txid);
+            __piPost('/api/pi-complete',{paymentId:paymentId,txid:txid})
+              .then(function(){settle(true,{paymentId:paymentId,txid:txid});})
+              .catch(function(e){console.warn('[pi] complete falhou',e);settle(false,e);});
+          },
+          onCancel:function(paymentId){console.warn('[pi] pay cancel:',paymentId);settle(false,{cancelled:true});},
+          onError:function(err){console.warn('[pi] pay error:',err);settle(false,err||new Error('erro pagamento'));}
+        });
+      }catch(e){settle(false,e);}
+    });
+  });
 }
 function flashNoCoins(c){ // pisca vermelho no preco
   var t0=performance.now(); c._noCoin=1;
@@ -1359,52 +1381,38 @@ function flashNoCoins(c){ // pisca vermelho no preco
 }
 function watchAdUnlock(c){
   var lcol=c.col, lcj=c.cj;   // guarda a POSICAO, nao o objeto: layout() recria a board no resize
-  showRewardedAd(function(){
-    var cell=null;            // relocaliza a celula (o ad pode ter disparado resize -> board nova)
+  payWithPi(UNLOCK_PI,'Hexanova \u2014 desbloquear c\u00e9lula',{type:'unlock',level:S.level}).then(function(){
+    var cell=null;            // relocaliza a celula (o pagamento pode ter disparado resize -> board nova)
     for(var q=0;q<S.board.length;q++){if(S.board[q].col===lcol&&S.board[q].cj===lcj){cell=S.board[q];break;}}
     if(!cell)return;
     cell.adLock=false; sfx(700);
     // pequeno flash de desbloqueio
     for(var i=0;i<14;i++){var a=Math.random()*7,s=1+Math.random()*3;particles.push({x:cell.x,y:cell.y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1.5,life:1,r:2+Math.random()*3,color:'#ffd54f'});}
     save();saveMid();
-  }, function(){ /* falhou: mantem bloqueada */ });
+  }).catch(function(){ /* falhou/cancelou: mantem bloqueada */ });
 }
 function sfx(f){if(!soundOn)return;try{var a=new(window.AudioContext||window.webkitAudioContext)();var o=a.createOscillator(),g=a.createGain();o.frequency.value=f;o.type='triangle';o.connect(g);g.connect(a.destination);g.gain.value=.05;g.gain.exponentialRampToValueAtTime(.0001,a.currentTime+.12);o.start();o.stop(a.currentTime+.12);}catch(e){}}
 /* ===== LOJA DE DIAMANTES (pill) ===== */
-var SHOP_PACKS=[100,250,500,1000]; // diamantes por pacote (1 ad cada)
+var SHOP_PACKS=[100,250,500,1000]; // diamantes por pacote (preco em Pi = SHOP_PI)
 document.querySelectorAll('.m-gem').forEach(function(el){el.style.backgroundImage="url('"+ART.gem+"')";});
 document.querySelectorAll('.m-close').forEach(function(b){b.onclick=function(){document.getElementById(b.dataset.close).style.display='none';};});
-/* packs multi-ad (igual aos outros projetos): 1/2/3/4 ads; progresso persiste no save */
-var SHOP_ADS={100:1,250:2,500:5,1000:8};
-function shopProgGet(){try{return JSON.parse(localStorage.getItem('hss2')||'{}').adProg||{};}catch(e){return{};}}
-function shopProgPut(p){try{var s=JSON.parse(localStorage.getItem('hss2')||'{}');s.adProg=p;localStorage.setItem('hss2',JSON.stringify(s));}catch(e){}}
+/* pacotes agora PAGOS EM PI: cada pacote tem um preco fixo em Pi (SHOP_PI). */
 function shopRender(){shopBal.textContent=S.coins;
   var g=document.getElementById('shopGrid');g.innerHTML='';
   SHOP_PACKS.forEach(function(n,idx){
-    var need=SHOP_ADS[n]||1, got=shopProgGet()['p'+n]||0;
+    var price=SHOP_PI[n]||1;
     var d=document.createElement('div');d.className='m-pack'+(n===1000?' best':'');
     var gs=[24,28,32,40][idx]||26; // gem cresce com o pacote
     var rib=n===500?'<div class="ribbon">Popular</div>':(n===1000?'<div class="ribbon">&#11088; Best value</div>':'');
     d.innerHTML=rib+'<div class="amt"><img class="p-gem" style="width:'+gs+'px;height:'+gs+'px" src="'+ART.gem+'">+'+n+'</div>';
-    if(need>1){ // barra de progresso dos ads no lugar do texto X/N
-      var pr=document.createElement('div');pr.className='p-prog';
-      for(var i=0;i<need;i++){var sg=document.createElement('i');sg.className='p-seg'+(i<got?' on':'');pr.appendChild(sg);}
-      d.appendChild(pr);
-    }
-    var b=document.createElement('button');b.textContent='\uD83C\uDFAC Watch ad';
-    b.onclick=function(){b.disabled=true;b.textContent='Loading...';
-      showRewardedAd(function(){
-        var prog=shopProgGet(), k='p'+n;
-        prog[k]=(prog[k]||0)+1;
-        if(prog[k]>=need){                       // completou a sequencia: paga e zera
-          prog[k]=0;shopProgPut(prog);
-          S.coins+=n;save();updateCoins();sfx(900);refreshBuyIfOpen();
-          var p=document.getElementById('shopPlus');p.textContent='+'+n+' \uD83D\uDC8E';
-          p.classList.remove('go');void p.offsetWidth;p.classList.add('go');
-        }else{shopProgPut(prog);sfx(760);}       // progrediu: segmento acende
+    var b=document.createElement('button');b.innerHTML=price+' &#960;';   // "N π"
+    b.onclick=function(){b.disabled=true;var old=b.innerHTML;b.textContent='...';
+      payWithPi(price,'Hexanova \u2014 '+n+' diamonds',{type:'diamonds',pack:n}).then(function(){
+        S.coins+=n;save();updateCoins();sfx(900);refreshBuyIfOpen();
+        var p=document.getElementById('shopPlus');p.textContent='+'+n+' \uD83D\uDC8E';
+        p.classList.remove('go');void p.offsetWidth;p.classList.add('go');
         shopRender();
-      },
-      function(){shopRender();});
+      }).catch(function(){b.disabled=false;b.innerHTML=old;});
     };
     d.appendChild(b);g.appendChild(d);
   });
@@ -1449,11 +1457,11 @@ function showFail(){
     return;
   }
   failProg.textContent=S.cleared+'/'+S.goal;
-  reviveBtn.innerHTML='&#127916; Revive ('+(3-(S._revives||0))+' left)';
+  reviveBtn.innerHTML='Revive &middot; '+REVIVE_PI+' &#960; ('+(3-(S._revives||0))+' left)';
   document.getElementById('failM').style.display='flex';
 }
 reviveBtn.onclick=function(){
-  showRewardedAd(function(){
+  payWithPi(REVIVE_PI,'Hexanova \u2014 revive',{type:'revive',level:S.level}).then(function(){
     S._revives=(S._revives||0)+1;
     document.getElementById('failM').style.display='none';
     var cands=S.board.filter(function(c){return c.stack.length&&!c.adLock&&!c.pointLock;});
@@ -1475,7 +1483,7 @@ reviveBtn.onclick=function(){
         });
       })();
     })(0);
-  },function(){});
+  }).catch(function(){});
 };
 giveupBtn.onclick=function(){document.getElementById('failM').style.display='none';clearMid();loadLevel(S.level);};
 loseHome.onclick=function(){document.getElementById('loseM').style.display='none';clearMid();loadLevel(S.level);showHome();};
@@ -1694,7 +1702,7 @@ document.getElementById('dailyClaim').onclick=function(){
   dailyRender();dailyRefreshDot();
 };
 /* ===== DEBUG PANEL (ativar com ?debug=1 ou #debug na URL) =====
-   Reduzido pra Pi: leituras de STORAGE / PI INIT / AUTH / AD + testes locais.
+   Reduzido pra Pi: leituras de STORAGE / PI INIT / AUTH / PAY + testes locais.
    Botoes de task/tournament/medal (CiDi) foram removidos. */
 (function(){
   var on=/[?&]debug=1/.test(location.search)||location.hash.indexOf('debug')>=0;
@@ -1718,7 +1726,7 @@ document.getElementById('dailyClaim').onclick=function(){
   pan.style.cssText='position:fixed;left:6px;right:6px;bottom:52px;z-index:7000;display:none;background:rgba(10,14,30,.96);border:1.5px solid #3f6099;border-radius:14px;padding:10px;color:#cfe0ff;font:12px/1.5 monospace;max-height:70vh;overflow:auto';
   pan.innerHTML='<div id="dbgStat" style="white-space:pre-wrap"></div>'
    +'<div style="display:flex;flex-wrap:wrap;gap:6px;margin:8px 0">'
-   +'<button class="dbgB" id="dbgAd">test AD</button>'
+   +'<button class="dbgB" id="dbgAd">test PI PAY (1\u03C0)</button>'
    +'<button class="dbgB" id="dbgLogin">test PI AUTH</button>'
    +'<button class="dbgB" id="dbgStore">test STORAGE</button>'
    +'</div><div id="dbgLog" style="background:#060a18;border-radius:8px;padding:8px;height:150px;overflow:auto;white-space:pre-wrap"></div>';
@@ -1727,27 +1735,25 @@ document.getElementById('dailyClaim').onclick=function(){
   document.head.appendChild(st);
   function refresh(){
     var lines=[];
-    lines.push('PI SDK   Pi='+(window.Pi?'present':'MISSING')+' | Ads='+((window.Pi&&Pi.Ads)?'present':'no')+' | inPiBrowser='+(/PiBrowser/i.test(navigator.userAgent||'')?'YES':'no'));
+    lines.push('PI SDK   Pi='+(window.Pi?'present':'MISSING')+' | Pay='+((window.Pi&&Pi.createPayment)?'present':'no')+' | inPiBrowser='+(/PiBrowser/i.test(navigator.userAgent||'')?'YES':'no'));
     try{localStorage.setItem('__dbg_t','1');lines.push('STORAGE  localStorage RW = OK | save hss2 = '+(localStorage.getItem('hss2')?'present':'empty'));}
     catch(e){lines.push('STORAGE  localStorage RW = FAILED: '+e.message);}
     var a=window.__piAuth;
     lines.push('AUTH     user='+((a&&a.user&&a.user.username)||'-')+' | token='+(a&&a.accessToken?'present':'absent'));
-    lines.push('AD       Pi.Ads.showAd='+((window.Pi&&Pi.Ads&&Pi.Ads.showAd)?'present':'MISSING (dev fallback)'));
+    lines.push('PAY      Pi.createPayment='+((window.Pi&&Pi.createPayment)?'present':'MISSING (dev fallback)'));
     lines.push('LEVEL    atual='+S.level);
     document.getElementById('dbgStat').textContent=lines.join('\n');
   }
   btn.onclick=function(){pan.style.display=pan.style.display==='none'?'block':'none';if(pan.style.display==='block')refresh();};
   setInterval(function(){if(pan.style.display==='block')refresh();},1000);
-  document.getElementById('dbgAd').onclick=function(){dlog('[pi] dbg: testing rewarded ad...');
-    window.__adLast=null;
-    showRewardedAd(
-      function(){dlog('[pi] dbg: AD SUCCESS'+(window.__adMode==='fallback'?' [SIMULATED]':' [REAL]'));
-        if(window.__adLast)dlog('[pi] dbg: result = '+JSON.stringify(window.__adLast.result||window.__adLast));},
-      function(){dlog('[pi] dbg: AD FAILED'+(window.__adMode==='fallback'?' [SIMULATED]':' [REAL]'));
-        var L=window.__adLast;
-        if(L){ if(L.phase==='rejected'){dlog('  -> REJECTED '+String(L.error));}
-          else{dlog('  -> result='+JSON.stringify(L.result));} }
-        else dlog('  -> (no result captured; SDK missing?)');});};
+  document.getElementById('dbgAd').onclick=function(){dlog('[pi] dbg: test payment 1\u03C0...');
+    window.__payLast=null;
+    payWithPi(1,'Hexanova \u2014 debug test',{type:'debug'})
+      .then(function(info){dlog('[pi] dbg: PAY OK'+(window.__payMode==='fallback'?' [SIMULADO]':' [REAL]'));
+        dlog('  -> '+JSON.stringify(info||{}));})
+      .catch(function(err){dlog('[pi] dbg: PAY FAIL'+(window.__payMode==='fallback'?' [SIMULADO]':' [REAL]'));
+        if(err&&err.cancelled)dlog('  -> CANCELADO pelo usuario');
+        else dlog('  -> '+((err&&err.message)||String(err)));});};
   document.getElementById('dbgLogin').onclick=function(){dlog('[pi] dbg: Pi.authenticate...');
     window.__ensureLogin().then(function(a){dlog('[pi] dbg: auth returned '+(a?('user='+(a.user&&a.user.username)):'null'));});};
   document.getElementById('dbgStore').onclick=function(){
