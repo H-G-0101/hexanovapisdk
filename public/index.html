@@ -54,7 +54,7 @@ window.__ensureLogin=(function(){var p=null;return function(){
       var scopes=['username','payments'];   // 'payments' habilita Pi.createPayment
       return Pi.authenticate(scopes,window.__piHandleIncomplete).then(function(auth){
         window.__piAuth=auth;
-        console.log('[pi] auth OK:',auth&&auth.user&&auth.user.username);
+        console.log('[pi] auth OK:',auth&&auth.user&&auth.user.username,'| uid=',auth&&auth.user&&auth.user.uid);
         return auth;
       }).catch(function(e){console.warn('[pi] auth falhou:',e);return null;});
     }catch(e){return Promise.resolve(null);}
@@ -1740,6 +1740,7 @@ document.getElementById('dailyClaim').onclick=function(){
   function refresh(){
     var lines=[];
     lines.push('PI SDK   Pi='+(window.Pi?'present':'MISSING')+' | Pay='+((window.Pi&&Pi.createPayment)?'present':'no')+' | inPiBrowser='+(/PiBrowser/i.test(navigator.userAgent||'')?'YES':'no'));
+    lines.push('USER     '+((window.__piAuth&&window.__piAuth.user&&window.__piAuth.user.username)||'(nao logado)')+' | uid='+((window.__piAuth&&window.__piAuth.user&&window.__piAuth.user.uid)||'-'));
     try{localStorage.setItem('__dbg_t','1');lines.push('STORAGE  localStorage RW = OK | save hss2 = '+(localStorage.getItem('hss2')?'present':'empty'));}
     catch(e){lines.push('STORAGE  localStorage RW = FAILED: '+e.message);}
     var a=window.__piAuth;
